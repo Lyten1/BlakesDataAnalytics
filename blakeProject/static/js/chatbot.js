@@ -104,7 +104,6 @@ async function getBotResponse(userMessage) {
     });
 
     if (!response.ok) {
-      // Attempt to parse error as JSON, fallback to plain text if necessary
       let errorData;
       try {
         errorData = await response.json();
@@ -119,7 +118,7 @@ async function getBotResponse(userMessage) {
     const data = await response.json();     
 
 
-    
+
 
     // Return the bot's response if available
     return data.message || "Sorry, I couldn't understand your question.";
