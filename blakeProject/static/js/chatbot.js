@@ -116,7 +116,10 @@ async function getBotResponse(userMessage) {
     }
 
     // Try parsing the response as JSON
-    const data = await response.json();
+    const data = await response.json();     
+
+
+    
 
     // Return the bot's response if available
     return data.message || "Sorry, I couldn't understand your question.";
