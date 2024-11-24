@@ -1,15 +1,14 @@
-import base64
 import json
 import os
 import openai
 import pandas as pd
 from flask import Flask, request, jsonify
 from html import escape  # Correct module for escape
-
-from matplotlib import pyplot as plt
-
 from config import API_KEY
 from flask_cors import CORS
+import matplotlib.pyplot as plt
+import io
+import base64
 
 # OpenAI API Initialization
 os.environ["OPENAI_API_KEY"] = API_KEY
@@ -21,54 +20,6 @@ app = Flask(__name__)
 
 
 CORS(app)
-
-import openai
-import matplotlib.pyplot as plt
-import os
-
-def make_graf(user_query, dataset):
-    # Create the prompt to send to GPT
-    prompt = f"""
-    I have the following dataset:
-    {dataset}
-    Please generate Python code using matplotlib to create a plot that answers the following query:
-    {user_query}
-    """
-
-    # Get the response from GPT-4 model
-    response = openai.Completion.create(
-        model="gpt-4o",
-        prompt=prompt,
-        max_tokens=500,
-        temperature=0
-    )
-
-    # Extract the generated code from the response
-    generated_code = response.choices[0].text.strip()
-
-    # Execute the generated code (assumes the generated code is safe to run)
-    try:
-        # Prepare the environment for executing the generated code
-        exec(generated_code)
-
-        # Define the output file location
-        output_file = 'output_plot.png'
-
-        # Save the plot to a file (if a plot has been generated)
-        plt.savefig(output_file)
-
-        # Close the plot to free up memory
-        plt.close()
-
-        # Return the path to the saved plot file
-        return output_file
-
-    except Exception as e:
-        # Handle any errors that might occur during code execution
-        print(f"An error occurred while generating the plot: {e}")
-        return None
-
-
 
 # Data directory
 DATA_FOLDER = "WHO_Region_Data"
@@ -87,15 +38,70 @@ def build_directory_tree(folder):
 # Build tree and get region-country mappings
 directory_tree = build_directory_tree(DATA_FOLDER)
 
-# Function to parse the query with OpenAI
+
+# Function to create a graph based on the dataset and user query
+def create_graph(dataset, query):
+    """
+    Creates a graph based on the dataset and the user's query.
+    Handles cases where one dimension is dates and another is numeric.
+    Returns a base64-encoded image of the graph.
+    """
+    try:
+        # Check if there's a column with dates
+        date_columns = dataset.select_dtypes(include=["datetime64", "object"]).columns
+        numeric_columns = dataset.select_dtypes(include=["number"]).columns
+
+        if len(numeric_columns) < 1:
+            return "The dataset does not have enough numeric columns to generate a meaningful graph."
+
+        # Handle dates if available
+        if len(date_columns) > 0:
+            # Assume the first date column is the x-axis
+            date_col = date_columns[0]
+            dataset[date_col] = pd.to_datetime(dataset[date_col], errors='coerce')
+            dataset = dataset.dropna(subset=[date_col])  # Drop rows with invalid dates
+            dataset = dataset.sort_values(by=date_col)  # Ensure dates are in order
+
+            # Plot date on x-axis and first numeric column on y-axis
+            plt.figure(figsize=(10, 6))
+            plt.plot(dataset[date_col], dataset[numeric_columns[0]], marker='o')
+            plt.title(f"Graph based on query: {query}")
+            plt.xlabel(date_col)
+            plt.ylabel(numeric_columns[0])
+            plt.grid(True)
+            plt.xticks(rotation=45)  # Rotate dates for better readability
+        else:
+            # Plot the first two numeric columns as a fallback
+            plt.figure(figsize=(10, 6))
+            plt.plot(dataset[numeric_columns[0]], dataset[numeric_columns[1]], marker='o')
+            plt.title(f"Graph based on query: {query}")
+            plt.xlabel(numeric_columns[0])
+            plt.ylabel(numeric_columns[1])
+            plt.grid(True)
+
+        # Save the plot to a BytesIO buffer
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png")
+        plt.close()
+        buf.seek(0)
+
+        # Encode the image in base64 for transmission
+        encoded_image = base64.b64encode(buf.read()).decode("utf-8")
+        buf.close()
+        return f"data:image/png;base64,{encoded_image}"
+
+    except Exception as e:
+        return f"An error occurred while creating the graph: {e}"
+
+# Function to parse the query with OpenAI (updated for multiple countries)
 def parse_request_for_keywords(prompt, regions_and_countries):
     system_prompt = (
-        "Extract the region, country, year, and month from the user's query. "
-        "If the region is missing, infer it based on the country. "
+        "Extract the region, countries (comma-separated if more than one), year, and month from the user's query. "
+        "If the region is missing, infer it based on the countries. "
         "Only use regions from this list: "
         f"{list(regions_and_countries.keys())}. "
         "Respond only with a JSON object in the format: "
-        '{"region": "<region>", "country": "<country>", "year": "<year>"}'
+        '{"region": "<region>", "countries": ["<country1>", "<country2>"], "year": "<year>"}'
     )
 
     try:
@@ -110,32 +116,31 @@ def parse_request_for_keywords(prompt, regions_and_countries):
         return eval(result)  # Convert JSON-like string to dictionary
     except Exception as e:
         print(f"Error parsing OpenAI response: {e}")
-        return {"region": None, "country": None, "year": None}
+        return {"region": None, "countries": [], "year": None}
 
 
 
-# Function to search dataset in the directory tree
-def search_dataset(tree, region=None, country=None, year=None):
-    def recursive_search(subtree, region, country, year, path=""):
+# Function to search dataset in the directory tree (updated for multiple countries)
+def search_dataset(tree, region=None, countries=None, year=None):
+    def recursive_search(subtree, region, countries, year, path=""):
+        matching_files = []
         for key, value in subtree.items():
             if key == "files":
                 for file in value:
                     normalized_year = year[-2:] if year else ""
                     if (
-                        region and country and year and
-                        region.lower() in path.lower() and
-                        country.lower() in path.lower() and
-                        normalized_year in file
+                        region and year and any(
+                            country.lower() in path.lower() for country in countries
+                        ) and normalized_year in file
                     ):
-                        return os.path.join(path, file)
+                        matching_files.append(os.path.join(path, file))
             elif isinstance(value, dict):
-                result = recursive_search(value, region, country, year, os.path.join(path, key))
+                result = recursive_search(value, region, countries, year, os.path.join(path, key))
                 if result:
-                    return result
-        return None
+                    matching_files.extend(result)
+        return matching_files
 
-    return recursive_search(tree, region, country, year)
-
+    return recursive_search(tree, region, countries, year)
 
 def answer_question(user_query, dataset):
     """
@@ -190,9 +195,6 @@ def index():
     </body>
     </html>
     """
-
- None
-
 @app.route("/search", methods=["POST"])
 def search():
     request_data = request.get_json()
@@ -200,53 +202,40 @@ def search():
     if not user_query:
         return jsonify({"error": "Query is required."}), 400
 
-    # Example logic for parsing query and searching dataset
-    # Replace with your actual logic
+    # Parse the query
     parsed_keywords = parse_request_for_keywords(user_query, directory_tree)
+    print(parsed_keywords)
     region = parsed_keywords.get("region")
-    country = parsed_keywords.get("country")
+    countries = parsed_keywords.get("countries")
     year = parsed_keywords.get("year")
 
     if not year:
         return jsonify({"error": "Please specify a valid year in your query."}), 400
 
-    dataset_path = search_dataset(directory_tree, region, country, year)
-    if dataset_path:
-        full_path = os.path.join(DATA_FOLDER, dataset_path)
-        try:
-            data = pd.read_csv(full_path)
-            if data.empty:
-                response_text = "The dataset is available but contains no data."
-            else:
-                response_text = answer_question(user_query, data)
+    if not countries:
+        return jsonify({"error": "Please specify at least one country in your query."}), 400
 
-            # Generate the plot
-            plot_file = make_graf(user_query, data)
-
-            if plot_file:
-                # Convert the plot to a base64 image and include it in the response
-                with open(plot_file, "rb") as f:
-                    plot_base64 = base64.b64encode(f.read()).decode("utf-8")
-
-                # Return the text and plot in the response
-                return jsonify({
-                    "response_text": response_text,
-                    "plot_base64": plot_base64
-                })
-            else:
-                # If no plot was generated, return only the text
-                return jsonify({
-                    "response_text": response_text
-                })
-
-        except Exception as e:
-            response_text = f"An error occurred while processing the dataset: {e}"
-            return jsonify({"error": response_text}), 500
+    dataset_paths = search_dataset(directory_tree, region, countries, year)
+    print(dataset_paths)
+    if dataset_paths:
+        responses = []
+        graphs = []
+        for dataset_path in dataset_paths:
+            full_path = os.path.join(DATA_FOLDER, dataset_path)
+            try:
+                data = pd.read_csv(full_path)
+                if data.empty:
+                    responses.append(f"The dataset '{dataset_path}' is available but contains no data.")
+                else:
+                    responses.append(answer_question(user_query, data))
+                    graph = create_graph(data, user_query)
+                    graphs.append(graph)
+            except Exception as e:
+                responses.append(f"An error occurred while processing the dataset '{dataset_path}': {e}")
+        response_text = "\n\n".join(responses)
+        return jsonify({"message": response_text, "graphs": graphs})
     else:
-        return jsonify({"error": "No dataset matching your query was found."}), 404
-
-    return jsonify({"message": response_text})
-
+        return jsonify({"message": "No datasets matching your query were found.", "graphs": []})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5500)

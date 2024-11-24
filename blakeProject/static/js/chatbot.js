@@ -64,38 +64,75 @@ function switchChat(chatId) {
   restoreMessages(chatId);
 }
 
-// Функція для додавання повідомлення в чат
-function appendMessage(chatId, sender, message) {
+// Function to append messages and optionally a graph to the chat
+function appendMessage(chatId, sender, message, graph = null) {
+  const messagesDiv = document.getElementById(`${chatId}-messages`);
+
+  // Add the message
   const messageDiv = document.createElement("div");
   messageDiv.className = sender === "user" ? "user-message" : "bot-message";
   messageDiv.textContent = message;
-  const messagesDiv = document.getElementById(`${chatId}-messages`);
   messagesDiv.appendChild(messageDiv);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight; // Прокрутка вниз
+
+  // If there's a graph, add it
+  if (graph) {
+    const graphDiv = document.createElement("div");
+    graphDiv.className = "bot-message graph-message"; // Use a unique class for styling graphs
+    const img = document.createElement("img");
+    img.src = graph;
+    img.alt = "Graph representation";
+    graphDiv.appendChild(img);
+    messagesDiv.appendChild(graphDiv);
+  }
+
+  // Scroll to the bottom of the chat
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// Функція для відправки повідомлення
+// Function to send messages and handle bot responses with optional graphs
 async function sendMessage(chatId, message) {
   const userMessage = message.trim();
   if (!userMessage) return;
 
-  // Додаємо повідомлення користувача
+  // Add the user's message
   appendMessage(chatId, "user", userMessage);
-  document.getElementById(`${chatId}-user-input`).value = ""; // Очищаємо поле вводу
+  document.getElementById(`${chatId}-user-input`).value = ""; // Clear the input field
 
-  // Отримуємо відповідь від бота
-  const botResponse = await getBotResponse(userMessage);
-  appendMessage(chatId, "bot", botResponse);
+  try {
+    // Fetch the bot's response
+    const response = await fetch("http://127.0.0.1:5500/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userMessage }),
+    });
 
-  // Зберігаємо чати після додавання нового повідомлення
-  saveChats();
+    if (!response.ok) {
+      const errorData = await response.text();
+      appendMessage(chatId, "bot", `Server error: ${response.statusText}`);
+      console.error("Error from server:", errorData);
+      return;
+    }
+
+    const data = await response.json();
+
+    // Add the bot's response and graph to the chat
+    const botMessage = data.message || "Sorry, I couldn't understand your question.";
+    const botGraph = data.graphs && data.graphs.length > 0 ? data.graphs[0] : null; // Use the first graph if available
+    appendMessage(chatId, "bot", botMessage, botGraph);
+
+    // Save the updated chat to localStorage
+    saveChats();
+  } catch (error) {
+    console.error("Error fetching bot response:", error);
+    appendMessage(chatId, "bot", "Sorry, I couldn't process your request due to a technical issue.");
+  }
 }
 
 async function getBotResponse(userMessage) {
   try {
     console.log("User message:", JSON.stringify({ message: userMessage }));
 
-    const response = await fetch("http://127.0.0.1:5000/search", {
+    const response = await fetch("http://127.0.0.1:5500/search", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -104,6 +141,7 @@ async function getBotResponse(userMessage) {
     });
 
     if (!response.ok) {
+      // Attempt to parse error as JSON, fallback to plain text if necessary
       let errorData;
       try {
         errorData = await response.json();
@@ -115,10 +153,7 @@ async function getBotResponse(userMessage) {
     }
 
     // Try parsing the response as JSON
-    const data = await response.json();     
-
-
-
+    const data = await response.json();
 
     // Return the bot's response if available
     return data.message || "Sorry, I couldn't understand your question.";
@@ -244,7 +279,7 @@ function createHistoryItem(chatId, chatName) {
 
   const iconDelete = document.createElement("img");
   iconDelete.src = "/"; // Вказуємо шлях до вашої іконки
-  iconDelete.src = "../static/source/TrashBinIcon.png";// Вказуємо шлях до вашої іконки
+  iconDelete.src = "../static/source/iconDelete.png";// Вказуємо шлях до вашої іконки
   iconDelete.alt = "Delete chat";
   deleteButton.appendChild(iconDelete);
 
@@ -310,7 +345,6 @@ function deleteChat(chatId) {
     switchChat(chatsData[0].chatId);
   }
 }
-
 
 
 // Завантажуємо чати при першому завантаженні сторінки
