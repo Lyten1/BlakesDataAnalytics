@@ -1,9 +1,13 @@
+import base64
 import json
 import os
 import openai
 import pandas as pd
 from flask import Flask, request, jsonify
 from html import escape  # Correct module for escape
+
+from matplotlib import pyplot as plt
+
 from config import API_KEY
 from flask_cors import CORS
 
@@ -17,6 +21,54 @@ app = Flask(__name__)
 
 
 CORS(app)
+
+import openai
+import matplotlib.pyplot as plt
+import os
+
+def make_graf(user_query, dataset):
+    # Create the prompt to send to GPT
+    prompt = f"""
+    I have the following dataset:
+    {dataset}
+    Please generate Python code using matplotlib to create a plot that answers the following query:
+    {user_query}
+    """
+
+    # Get the response from GPT-4 model
+    response = openai.Completion.create(
+        model="gpt-4o",
+        prompt=prompt,
+        max_tokens=500,
+        temperature=0
+    )
+
+    # Extract the generated code from the response
+    generated_code = response.choices[0].text.strip()
+
+    # Execute the generated code (assumes the generated code is safe to run)
+    try:
+        # Prepare the environment for executing the generated code
+        exec(generated_code)
+
+        # Define the output file location
+        output_file = 'output_plot.png'
+
+        # Save the plot to a file (if a plot has been generated)
+        plt.savefig(output_file)
+
+        # Close the plot to free up memory
+        plt.close()
+
+        # Return the path to the saved plot file
+        return output_file
+
+    except Exception as e:
+        # Handle any errors that might occur during code execution
+        print(f"An error occurred while generating the plot: {e}")
+        return None
+
+
 
 # Data directory
 DATA_FOLDER = "WHO_Region_Data"
@@ -139,6 +191,8 @@ def index():
     </html>
     """
 
+ None
+
 @app.route("/search", methods=["POST"])
 def search():
     request_data = request.get_json()
@@ -157,7 +211,6 @@ def search():
         return jsonify({"error": "Please specify a valid year in your query."}), 400
 
     dataset_path = search_dataset(directory_tree, region, country, year)
-    print(dataset_path)
     if dataset_path:
         full_path = os.path.join(DATA_FOLDER, dataset_path)
         try:
@@ -166,10 +219,31 @@ def search():
                 response_text = "The dataset is available but contains no data."
             else:
                 response_text = answer_question(user_query, data)
+
+            # Generate the plot
+            plot_file = make_graf(user_query, data)
+
+            if plot_file:
+                # Convert the plot to a base64 image and include it in the response
+                with open(plot_file, "rb") as f:
+                    plot_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+                # Return the text and plot in the response
+                return jsonify({
+                    "response_text": response_text,
+                    "plot_base64": plot_base64
+                })
+            else:
+                # If no plot was generated, return only the text
+                return jsonify({
+                    "response_text": response_text
+                })
+
         except Exception as e:
             response_text = f"An error occurred while processing the dataset: {e}"
+            return jsonify({"error": response_text}), 500
     else:
-        response_text = "No dataset matching your query was found."
+        return jsonify({"error": "No dataset matching your query was found."}), 404
 
     return jsonify({"message": response_text})
 

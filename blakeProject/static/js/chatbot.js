@@ -95,7 +95,7 @@ async function getBotResponse(userMessage) {
   try {
     console.log("User message:", JSON.stringify({ message: userMessage }));
 
-    const response = await fetch("http://127.0.0.1:5500/search", {
+    const response = await fetch("http://127.0.0.1:5000/search", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
