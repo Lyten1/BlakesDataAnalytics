@@ -82,12 +82,7 @@ body {
 }
 
 /* Chat Container */
-.chat-container {
-  flex: 1; /* Забезпечує, що цей блок розтягується на всю доступну ширину */
-  display: flex;
-  flex-direction: column;
-  background-color: #000;
-}
+
 
 .chat-header {
   font-weight: bold;
@@ -99,21 +94,31 @@ body {
   border-bottom: 1px solid #343541;
 }
 
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #000;
+  position: relative; /* Відносна позиція для внутрішніх елементів */
+  height: 100vh; /* Висота на весь екран */
+}
+
+/* Chat Window */
 .chat-window {
-  flex: 1; /* Розтягує вікно чату, щоб воно займало всю доступну висоту */
-  overflow-y: auto;
+  flex: 1; /* Займає доступний простір між заголовком і полем введення */
+  overflow-y: auto; /* Прокрутка, якщо вміст перевищує висоту */
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-bottom: 70px; /* Відступ, щоб поле вводу не перекривало останні повідомлення */
 }
-
 .messages {
+  padding: 10px 20px;
   display: flex;
   flex-direction: column;
-  gap: 15px;
-  height: 100vh;
-  padding: 10px;
+  gap: 10px;
+  overflow-y: auto; /* Прокручування для контейнера з повідомленнями */
 }
 
 .user-message {
@@ -145,10 +150,13 @@ body {
 /* Chat Input */
 .chat-input {
   display: flex;
-  align-items: center;
   padding: 15px;
   background-color: #202123;
   border-top: 1px solid #343541;
+  position: fixed; /* Закріплює поле вводу внизу */
+  bottom: 0; /* Розташовує на нижній межі екрана */
+  left: 300px; /* Враховує ширину сайдбара */
+  width: calc(100% - 300px); /* Ширина із врахуванням сайдбара */
 }
 
 .chat-input input {
@@ -173,18 +181,22 @@ body {
 }
 
 .chat-input button {
-  padding: 10px 20px;
+  padding: 0 20px;
   background-color: #E30074;
   border: none;
   border-radius: 5px;
   color: #ffffff;
   font-size: 1rem;
   cursor: pointer;
-  transition: 0.3s ease-in-out;
 }
 
 .chat-input button:hover {
-  background-color: #a3125c;
+  background-color: #ff6392;
+}
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
 /* Responsive Design */

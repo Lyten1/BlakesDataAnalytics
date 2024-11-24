@@ -242,7 +242,7 @@ function createHistoryItem(chatId, chatName) {
 
   const iconDelete = document.createElement("img");
   iconDelete.src = "/"; // Вказуємо шлях до вашої іконки
-  iconDelete.src = "../static/source/iconDelete.png";// Вказуємо шлях до вашої іконки
+  iconDelete.src = "../static/source/TrashBinIcon.png";// Вказуємо шлях до вашої іконки
   iconDelete.alt = "Delete chat";
   deleteButton.appendChild(iconDelete);
 
@@ -308,6 +308,7 @@ function deleteChat(chatId) {
     switchChat(chatsData[0].chatId);
   }
 }
+
 
 
 // Завантажуємо чати при першому завантаженні сторінки
